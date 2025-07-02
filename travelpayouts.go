@@ -1,18 +1,56 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
-	"strings"
+	"strconv"
 	"time"
 )
 
+// TravelPayoutsRequest представляет запрос к Travelpayouts API
+type TravelPayoutsRequest struct {
+	TRS     int                      `json:"trs"`
+	Marker  int                      `json:"marker"`
+	Shorten bool                     `json:"shorten"`
+	Links   []TravelPayoutsLinkItem  `json:"links"`
+}
+
+// TravelPayoutsLinkItem представляет элемент массива ссылок
+type TravelPayoutsLinkItem struct {
+	URL   string `json:"url"`
+	SubID string `json:"sub_id"`
+}
+
 // TravelPayoutsResponse представляет ответ от Travelpayouts API
 type TravelPayoutsResponse struct {
-	Link  string `json:"link"`
-	Error string `json:"error"`
+	Result TravelPayoutsResult `json:"result"`
+	Code   string              `json:"code"`
+	Status int                 `json:"status"`
+}
+
+// TravelPayoutsResult представляет результат в ответе
+type TravelPayoutsResult struct {
+	TRS     int                          `json:"trs"`
+	Marker  int                          `json:"marker"`
+	Shorten bool                         `json:"shorten"`
+	Links   []TravelPayoutsResponseLink  `json:"links"`
+}
+
+// TravelPayoutsResponseLink представляет ссылку в результате
+type TravelPayoutsResponseLink struct {
+	URL        string `json:"url"`
+	Code       string `json:"code"`
+	PartnerURL string `json:"partner_url"`
+}
+
+// TravelPayoutsErrorResponse для обработки ошибок
+type TravelPayoutsErrorResponse struct {
+	Error   string `json:"error"`
+	Code    string `json:"code"`
+	Status  int    `json:"status"`
+	Message string `json:"message"`
 }
 
 // makeAffiliateLink создает аффилиатную ссылку через Travelpayouts API
@@ -22,116 +60,149 @@ func makeAffiliateLink(originalLink, token, trs, marker string) (string, error) 
 		"token":         token,
 		"trs":           trs,
 		"marker":        marker,
-	}).Info("Создание аффилиатной ссылки")
+	}).Info("Создание аффилиатной ссылки через Travelpayouts API")
 
-	// Базовый URL API Travelpayouts для создания партнерских ссылок
-	// Поскольку конкретного API для создания партнерских ссылок в документации 
-	// не найдено, используем общий подход с добавлением параметров
-	
-	// Для демонстрации и тестирования создадим простую логику
-	// которая добавляет партнерские параметры к ссылке
-	affiliateLink, err := buildAffiliateLink(originalLink, token, trs, marker)
+	// Конвертируем строки в числа
+	trsInt, err := strconv.Atoi(trs)
 	if err != nil {
-		return "", fmt.Errorf("ошибка построения аффилиатной ссылки: %w", err)
+		return "", fmt.Errorf("неверный формат TRS: %v", err)
 	}
 
-	// В реальном случае здесь был бы HTTP запрос к Travelpayouts API
-	// Пример:
-	// response, err := callTravelPayoutsAPI(originalLink, token, trs, marker)
-	// if err != nil {
-	//     return "", err
-	// }
-	// return response.Link, nil
-
-	return affiliateLink, nil
-}
-
-// buildAffiliateLink строит аффилиатную ссылку добавляя необходимые параметры
-func buildAffiliateLink(originalLink, token, trs, marker string) (string, error) {
-	parsedURL, err := url.Parse(originalLink)
+	markerInt, err := strconv.Atoi(marker)
 	if err != nil {
-		return "", fmt.Errorf("некорректная ссылка: %w", err)
+		return "", fmt.Errorf("неверный формат Marker: %v", err)
 	}
 
-	// Добавляем партнерские параметры
-	values := parsedURL.Query()
-	
-	// Обязательный параметр sub_id согласно требованиям
-	values.Set("sub_id", "social_tool_main")
-	
-	// Добавляем переданные параметры
-	values.Set("token", token)
-	values.Set("trs", trs)
-	values.Set("marker", marker)
-	
-	// Добавляем utm метки для отслеживания
-	values.Set("utm_source", "travelpayouts")
-	values.Set("utm_medium", "affiliate")
-	values.Set("utm_campaign", "social_tool")
+	// Создаем запрос к Travelpayouts API
+	request := TravelPayoutsRequest{
+		TRS:     trsInt,
+		Marker:  markerInt,
+		Shorten: true,
+		Links: []TravelPayoutsLinkItem{
+			{
+				URL:   originalLink,
+				SubID: "social_tool_main",
+			},
+		},
+	}
 
-	parsedURL.RawQuery = values.Encode()
-	
-	return parsedURL.String(), nil
-}
+	// Конвертируем в JSON
+	jsonData, err := json.Marshal(request)
+	if err != nil {
+		logger.WithError(err).Error("Ошибка сериализации JSON")
+		return "", fmt.Errorf("ошибка сериализации данных: %v", err)
+	}
 
-// callTravelPayoutsAPI делает реальный запрос к Travelpayouts API
-// Эта функция будет использоваться когда будет найдена точная документация по API
-func callTravelPayoutsAPI(originalLink, token, trs, marker string) (*TravelPayoutsResponse, error) {
-	// Пример реального запроса к API (когда будет доступна точная документация)
+	logger.WithField("request_body", string(jsonData)).Info("Отправка запроса к Travelpayouts API")
+
+	// Создаем HTTP запрос
+	req, err := http.NewRequest("POST", "https://api.travelpayouts.com/links/v1/create", bytes.NewBuffer(jsonData))
+	if err != nil {
+		logger.WithError(err).Error("Ошибка создания HTTP запроса")
+		return "", fmt.Errorf("ошибка создания запроса: %v", err)
+	}
+
+	// Устанавливаем заголовки
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Access-Token", token)
+
+	// Выполняем запрос
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
 
-	// Формируем запрос к API Travelpayouts
-	// URL API нужно уточнить в документации
-	apiURL := "https://api.travelpayouts.com/v1/affiliate_links"
-	
-	payload := map[string]string{
-		"url":     originalLink,
-		"token":   token,
-		"trs":     trs,
-		"marker":  marker,
-		"sub_id":  "social_tool_main",
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка сериализации запроса: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", apiURL, strings.NewReader(string(payloadBytes)))
-	if err != nil {
-		return nil, fmt.Errorf("ошибка создания запроса: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Access-Token", token)
-
-	logger.WithFields(map[string]interface{}{
-		"url":     apiURL,
-		"payload": string(payloadBytes),
-	}).Info("Отправка запроса к Travelpayouts API")
-
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка выполнения запроса: %w", err)
+		logger.WithError(err).Error("Ошибка выполнения HTTP запроса")
+		return "", fmt.Errorf("ошибка запроса к Travelpayouts API: %v", err)
 	}
 	defer resp.Body.Close()
 
+	logger.WithFields(map[string]interface{}{
+		"status_code": resp.StatusCode,
+		"status":      resp.Status,
+	}).Info("Получен ответ от Travelpayouts API")
+
+	// Читаем ответ
+	var responseBody bytes.Buffer
+	_, err = responseBody.ReadFrom(resp.Body)
+	if err != nil {
+		logger.WithError(err).Error("Ошибка чтения ответа")
+		return "", fmt.Errorf("ошибка чтения ответа: %v", err)
+	}
+
+	responseString := responseBody.String()
+	logger.WithField("response_body", responseString).Info("Тело ответа от Travelpayouts API")
+
+	// Проверяем статус ответа
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API вернул статус %d", resp.StatusCode)
+		// Пытаемся парсить ошибку
+		var errorResp TravelPayoutsErrorResponse
+		if err := json.Unmarshal(responseBody.Bytes(), &errorResp); err != nil {
+			logger.WithError(err).Error("Ошибка парсинга ошибки от API")
+			return "", fmt.Errorf("API вернул ошибку %d: %s", resp.StatusCode, responseString)
+		}
+		
+		logger.WithFields(map[string]interface{}{
+			"error_code":    errorResp.Code,
+			"error_message": errorResp.Error,
+			"status":        errorResp.Status,
+		}).Error("Travelpayouts API вернул ошибку")
+		
+		if errorResp.Error != "" {
+			return "", fmt.Errorf("ошибка Travelpayouts API: %s", errorResp.Error)
+		}
+		return "", fmt.Errorf("ошибка Travelpayouts API %d: %s", resp.StatusCode, errorResp.Message)
 	}
 
-	var response TravelPayoutsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("ошибка декодирования ответа: %w", err)
+	// Парсим успешный ответ
+	var apiResponse TravelPayoutsResponse
+	if err := json.Unmarshal(responseBody.Bytes(), &apiResponse); err != nil {
+		logger.WithError(err).Error("Ошибка парсинга ответа API")
+		return "", fmt.Errorf("ошибка парсинга ответа: %v", err)
 	}
 
-	if response.Error != "" {
-		return nil, fmt.Errorf("ошибка API: %s", response.Error)
+	// Проверяем код ответа
+	if apiResponse.Code != "success" {
+		logger.WithField("response_code", apiResponse.Code).Error("API вернул неуспешный код")
+		return "", fmt.Errorf("API вернул код ошибки: %s", apiResponse.Code)
 	}
 
-	logger.WithField("affiliate_link", response.Link).Info("Получена аффилиатная ссылка от API")
+	// Проверяем наличие ссылок
+	if len(apiResponse.Result.Links) == 0 {
+		logger.Error("В ответе API нет ссылок")
+		return "", fmt.Errorf("API не вернул ссылок")
+	}
+
+	// Получаем первую ссылку
+	link := apiResponse.Result.Links[0]
 	
-	return &response, nil
+	// Проверяем статус ссылки
+	if link.Code != "success" {
+		logger.WithField("link_code", link.Code).Error("Ссылка имеет статус ошибки")
+		return "", fmt.Errorf("ошибка создания ссылки: %s", link.Code)
+	}
+
+	// Проверяем наличие партнерской ссылки
+	if link.PartnerURL == "" {
+		logger.Error("Партнерская ссылка пуста")
+		return "", fmt.Errorf("API не вернул партнерскую ссылку")
+	}
+
+	logger.WithFields(map[string]interface{}{
+		"original_url":  link.URL,
+		"partner_url":   link.PartnerURL,
+		"response_code": link.Code,
+	}).Info("Успешно создана аффилиатная ссылка")
+
+	return link.PartnerURL, nil
+}
+
+// buildAffiliateLink - старая функция для тестирования (оставляем как fallback)
+func buildAffiliateLink(originalLink, token, trs, marker string) (string, error) {
+	logger.Warn("Используется fallback метод создания ссылки (не реальный API)")
+	
+	// Простое добавление параметров к URL (для тестирования)
+	return fmt.Sprintf("%s?sub_id=social_tool_main&token=%s&trs=%s&marker=%s", 
+		originalLink, token, trs, marker), nil
 } 

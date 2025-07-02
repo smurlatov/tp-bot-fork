@@ -7,8 +7,8 @@ RUN apk add --no-cache git
 # Создаем рабочую директорию
 WORKDIR /app
 
-# Копируем go mod и sum файлы
-COPY go.mod go.sum ./
+# Копируем go mod файл
+COPY go.mod ./
 
 # Загружаем зависимости
 RUN go mod download
@@ -16,14 +16,17 @@ RUN go mod download
 # Копируем исходный код
 COPY . .
 
-# Собираем приложение
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o main .
+# Обновляем зависимости и создаем go.sum
+RUN go mod tidy
+
+# Собираем приложение (отключаем CGO для pure Go сборки)
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
 # Используем минимальный образ для runtime
 FROM alpine:latest
 
-# Устанавливаем сертификаты для HTTPS запросов и sqlite
-RUN apk --no-cache add ca-certificates sqlite
+# Устанавливаем сертификаты для HTTPS запросов
+RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
 

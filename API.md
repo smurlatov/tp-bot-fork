@@ -1,55 +1,55 @@
 # Travelpayouts Go Service API
 
-Легковесный Go сервис для создания аффилиатных ссылок через Travelpayouts API.
+Легковесный Go сервис для создания аффилиатных ссылок через **реальный** Travelpayouts API.
 
 ## Эндпоинты
 
 ### 1. POST /api/getFromLink
 
-Создает аффилиатную ссылку из прямой ссылки.
+Создает аффилиатную ссылку из прямой ссылки через Travelpayouts API.
 
 **Запрос:**
 ```json
 {
   "link": "https://www.booking.com/hotel/us/plaza.html",
   "token": "your_travelpayouts_token",
-  "trs": "your_trs_parameter", 
-  "marker": "your_marker"
+  "trs": "197987", 
+  "marker": "339296"
 }
 ```
 
 **Ответ (успешный):**
 ```json
 {
-  "link": "https://www.booking.com/hotel/us/plaza.html?sub_id=social_tool_main&token=your_token&trs=your_trs&marker=your_marker&utm_source=travelpayouts&utm_medium=affiliate&utm_campaign=social_tool"
+  "link": "https://c.travelpayouts.com/shortened_affiliate_link"
 }
 ```
 
 **Ответ (ошибка):**
 ```json
 {
-  "error": "Описание ошибки"
+  "error": "Описание ошибки от Travelpayouts API"
 }
 ```
 
 ### 2. POST /api/getFromBrand
 
-Создает аффилиатную ссылку для бренда по его названию.
+Создает аффилиатную ссылку для бренда по его названию через Travelpayouts API.
 
 **Запрос:**
 ```json
 {
   "brand_name": "booking",
   "token": "your_travelpayouts_token", 
-  "trs": "your_trs_parameter",
-  "marker": "your_marker"
+  "trs": "197987",
+  "marker": "339296"
 }
 ```
 
 **Ответ (успешный):**
 ```json
 {
-  "link": "https://www.booking.com?sub_id=social_tool_main&token=your_token&trs=your_trs&marker=your_marker&utm_source=travelpayouts&utm_medium=affiliate&utm_campaign=social_tool"
+  "link": "https://c.travelpayouts.com/shortened_affiliate_link"
 }
 ```
 
@@ -85,16 +85,24 @@
 
 - **link** - исходная ссылка для конвертации
 - **brand_name** - название бренда из списка поддерживаемых
-- **token** - токен Travelpayouts API
-- **trs** - параметр trs для отслеживания
-- **marker** - маркер партнера
+- **token** - токен Travelpayouts API (обязательный)
+- **trs** - числовой идентификатор TRS (обязательный)
+- **marker** - числовой маркер партнера (обязательный)
 - **sub_id** - автоматически устанавливается в "social_tool_main"
+
+## Внутренняя логика
+
+Сервис использует **реальный Travelpayouts API**:
+- Эндпоинт: `POST https://api.travelpayouts.com/links/v1/create`
+- Автоматически добавляет `sub_id=social_tool_main`
+- Использует сокращенные ссылки (`shorten: true`)
+- Возвращает реальные аффилиатные ссылки от Travelpayouts
 
 ## Коды ошибок
 
 - `400` - Некорректные параметры запроса
 - `404` - Бренд не найден
-- `500` - Внутренняя ошибка сервера
+- `500` - Внутренняя ошибка сервера или ошибка Travelpayouts API
 
 ## Примеры использования
 
@@ -106,9 +114,9 @@ curl -X POST http://localhost:8080/api/getFromLink \
   -H "Content-Type: application/json" \
   -d '{
     "link": "https://www.booking.com",
-    "token": "your_token",
-    "trs": "your_trs", 
-    "marker": "your_marker"
+    "token": "your_real_token",
+    "trs": "197987", 
+    "marker": "339296"
   }'
 
 # Создание ссылки по имени бренда
@@ -116,9 +124,9 @@ curl -X POST http://localhost:8080/api/getFromBrand \
   -H "Content-Type: application/json" \
   -d '{
     "brand_name": "booking",
-    "token": "your_token",
-    "trs": "your_trs",
-    "marker": "your_marker"
+    "token": "your_real_token",
+    "trs": "197987",
+    "marker": "339296"
   }'
 ```
 
@@ -133,9 +141,9 @@ fetch('http://localhost:8080/api/getFromLink', {
   },
   body: JSON.stringify({
     link: 'https://www.booking.com',
-    token: 'your_token',
-    trs: 'your_trs',
-    marker: 'your_marker'
+    token: 'your_real_token',
+    trs: '197987',
+    marker: '339296'
   })
 })
 .then(response => response.json())
@@ -149,11 +157,28 @@ fetch('http://localhost:8080/api/getFromBrand', {
   },
   body: JSON.stringify({
     brand_name: 'booking',
-    token: 'your_token', 
-    trs: 'your_trs',
-    marker: 'your_marker'
+    token: 'your_real_token', 
+    trs: '197987',
+    marker: '339296'
   })
 })
 .then(response => response.json())
 .then(data => console.log(data));
-``` 
+```
+
+## Требования к данным
+
+- **token**: Валидный токен Travelpayouts API
+- **trs**: Числовое значение TRS (например, 197987)
+- **marker**: Числовое значение маркера (например, 339296)
+- **link**: Валидный URL для конвертации
+- **brand_name**: Имя бренда из поддерживаемого списка
+
+## Логирование
+
+Сервис логирует:
+- Все входящие запросы
+- Запросы к Travelpayouts API
+- Ответы от Travelpayouts API
+- Созданные аффилиатные ссылки
+- Ошибки с полным контекстом 
