@@ -42,6 +42,7 @@ type TravelPayoutsResult struct {
 type TravelPayoutsResponseLink struct {
 	URL        string `json:"url"`
 	Code       string `json:"code"`
+	Message    string `json:"message"`
 	PartnerURL string `json:"partner_url"`
 }
 
@@ -54,7 +55,7 @@ type TravelPayoutsErrorResponse struct {
 }
 
 // makeAffiliateLink создает аффилиатную ссылку через Travelpayouts API
-func makeAffiliateLink(originalLink, token, trs, marker string) (string, error) {
+func makeAffiliateLink(originalLink, token, trs, marker string) (string, *TPError, error) {
 	logger.WithFields(map[string]interface{}{
 		"original_link": originalLink,
 		"token":         token,
@@ -65,12 +66,12 @@ func makeAffiliateLink(originalLink, token, trs, marker string) (string, error) 
 	// Конвертируем строки в числа
 	trsInt, err := strconv.Atoi(trs)
 	if err != nil {
-		return "", fmt.Errorf("неверный формат TRS: %v", err)
+		return "", &TPError{Code: "invalid_trs", Message: "неверный формат TRS"}, fmt.Errorf("неверный формат TRS: %v", err)
 	}
 
 	markerInt, err := strconv.Atoi(marker)
 	if err != nil {
-		return "", fmt.Errorf("неверный формат Marker: %v", err)
+		return "", &TPError{Code: "invalid_marker", Message: "неверный формат Marker"}, fmt.Errorf("неверный формат Marker: %v", err)
 	}
 
 	// Создаем запрос к Travelpayouts API
@@ -90,7 +91,7 @@ func makeAffiliateLink(originalLink, token, trs, marker string) (string, error) 
 	jsonData, err := json.Marshal(request)
 	if err != nil {
 		logger.WithError(err).Error("Ошибка сериализации JSON")
-		return "", fmt.Errorf("ошибка сериализации данных: %v", err)
+		return "", &TPError{Code: "json_error", Message: "ошибка сериализации данных"}, fmt.Errorf("ошибка сериализации данных: %v", err)
 	}
 
 	logger.WithField("request_body", string(jsonData)).Info("Отправка запроса к Travelpayouts API")
@@ -99,7 +100,7 @@ func makeAffiliateLink(originalLink, token, trs, marker string) (string, error) 
 	req, err := http.NewRequest("POST", "https://api.travelpayouts.com/links/v1/create", bytes.NewBuffer(jsonData))
 	if err != nil {
 		logger.WithError(err).Error("Ошибка создания HTTP запроса")
-		return "", fmt.Errorf("ошибка создания запроса: %v", err)
+		return "", &TPError{Code: "request_error", Message: "ошибка создания запроса"}, fmt.Errorf("ошибка создания запроса: %v", err)
 	}
 
 	// Устанавливаем заголовки
@@ -114,7 +115,7 @@ func makeAffiliateLink(originalLink, token, trs, marker string) (string, error) 
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.WithError(err).Error("Ошибка выполнения HTTP запроса")
-		return "", fmt.Errorf("ошибка запроса к Travelpayouts API: %v", err)
+		return "", &TPError{Code: "network_error", Message: "ошибка запроса к Travelpayouts API"}, fmt.Errorf("ошибка запроса к Travelpayouts API: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -128,7 +129,7 @@ func makeAffiliateLink(originalLink, token, trs, marker string) (string, error) 
 	_, err = responseBody.ReadFrom(resp.Body)
 	if err != nil {
 		logger.WithError(err).Error("Ошибка чтения ответа")
-		return "", fmt.Errorf("ошибка чтения ответа: %v", err)
+		return "", &TPError{Code: "response_error", Message: "ошибка чтения ответа"}, fmt.Errorf("ошибка чтения ответа: %v", err)
 	}
 
 	responseString := responseBody.String()
@@ -140,7 +141,7 @@ func makeAffiliateLink(originalLink, token, trs, marker string) (string, error) 
 		var errorResp TravelPayoutsErrorResponse
 		if err := json.Unmarshal(responseBody.Bytes(), &errorResp); err != nil {
 			logger.WithError(err).Error("Ошибка парсинга ошибки от API")
-			return "", fmt.Errorf("API вернул ошибку %d: %s", resp.StatusCode, responseString)
+			return "", &TPError{Code: "api_error", Message: fmt.Sprintf("API вернул ошибку %d", resp.StatusCode)}, fmt.Errorf("API вернул ошибку %d: %s", resp.StatusCode, responseString)
 		}
 		
 		logger.WithFields(map[string]interface{}{
@@ -150,43 +151,48 @@ func makeAffiliateLink(originalLink, token, trs, marker string) (string, error) 
 		}).Error("Travelpayouts API вернул ошибку")
 		
 		if errorResp.Error != "" {
-			return "", fmt.Errorf("ошибка Travelpayouts API: %s", errorResp.Error)
+			return "", &TPError{Code: errorResp.Code, Message: errorResp.Error}, fmt.Errorf("ошибка Travelpayouts API: %s", errorResp.Error)
 		}
-		return "", fmt.Errorf("ошибка Travelpayouts API %d: %s", resp.StatusCode, errorResp.Message)
+		return "", &TPError{Code: errorResp.Code, Message: errorResp.Message}, fmt.Errorf("ошибка Travelpayouts API %d: %s", resp.StatusCode, errorResp.Message)
 	}
 
 	// Парсим успешный ответ
 	var apiResponse TravelPayoutsResponse
 	if err := json.Unmarshal(responseBody.Bytes(), &apiResponse); err != nil {
 		logger.WithError(err).Error("Ошибка парсинга ответа API")
-		return "", fmt.Errorf("ошибка парсинга ответа: %v", err)
+		return "", &TPError{Code: "parse_error", Message: "ошибка парсинга ответа"}, fmt.Errorf("ошибка парсинга ответа: %v", err)
 	}
 
 	// Проверяем код ответа
 	if apiResponse.Code != "success" {
 		logger.WithField("response_code", apiResponse.Code).Error("API вернул неуспешный код")
-		return "", fmt.Errorf("API вернул код ошибки: %s", apiResponse.Code)
+		return "", &TPError{Code: apiResponse.Code, Message: "API вернул код ошибки"}, fmt.Errorf("API вернул код ошибки: %s", apiResponse.Code)
 	}
 
 	// Проверяем наличие ссылок
 	if len(apiResponse.Result.Links) == 0 {
 		logger.Error("В ответе API нет ссылок")
-		return "", fmt.Errorf("API не вернул ссылок")
+		return "", &TPError{Code: "no_links", Message: "API не вернул ссылок"}, fmt.Errorf("API не вернул ссылок")
 	}
 
 	// Получаем первую ссылку
 	link := apiResponse.Result.Links[0]
 	
-	// Проверяем статус ссылки
+	// Проверяем статус ссылки - КЛЮЧЕВАЯ ЛОГИКА ДЛЯ ОБРАБОТКИ ОШИБОК ОТ TP
 	if link.Code != "success" {
-		logger.WithField("link_code", link.Code).Error("Ссылка имеет статус ошибки")
-		return "", fmt.Errorf("ошибка создания ссылки: %s", link.Code)
+		logger.WithFields(map[string]interface{}{
+			"link_code":    link.Code,
+			"link_message": link.Message,
+		}).Error("Ссылка имеет статус ошибки")
+		
+		// Возвращаем ошибку от TP API с их кодом и сообщением
+		return "", &TPError{Code: link.Code, Message: link.Message}, fmt.Errorf("ошибка создания ссылки: %s - %s", link.Code, link.Message)
 	}
 
 	// Проверяем наличие партнерской ссылки
 	if link.PartnerURL == "" {
 		logger.Error("Партнерская ссылка пуста")
-		return "", fmt.Errorf("API не вернул партнерскую ссылку")
+		return "", &TPError{Code: "empty_partner_url", Message: "API не вернул партнерскую ссылку"}, fmt.Errorf("API не вернул партнерскую ссылку")
 	}
 
 	logger.WithFields(map[string]interface{}{
@@ -195,7 +201,7 @@ func makeAffiliateLink(originalLink, token, trs, marker string) (string, error) 
 		"response_code": link.Code,
 	}).Info("Успешно создана аффилиатная ссылка")
 
-	return link.PartnerURL, nil
+	return link.PartnerURL, nil, nil
 }
 
 // buildAffiliateLink - старая функция для тестирования (оставляем как fallback)

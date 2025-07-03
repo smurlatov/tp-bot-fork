@@ -30,6 +30,30 @@ type GetFromBrandRequest struct {
 	Marker    string `json:"marker" binding:"required"`
 }
 
+// Новые структуры для формата ответа v2
+type V2Response struct {
+	Version string    `json:"version"`
+	Content V2Content `json:"content"`
+}
+
+type V2Content struct {
+	Type     string      `json:"type"`
+	Messages []string    `json:"messages"`
+	Actions  []V2Action  `json:"actions"`
+}
+
+type V2Action struct {
+	Action    string      `json:"action"`
+	FieldName string      `json:"field_name"`
+	Value     interface{} `json:"value"`
+}
+
+// Структура для ошибок от Travelpayouts API
+type TPError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 type Response struct {
 	Link  string `json:"link,omitempty"`
 	Error string `json:"error,omitempty"`
@@ -117,7 +141,34 @@ func getFromLink(c *gin.Context) {
 	var req GetFromLinkRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.WithError(err).Error("Ошибка валидации запроса getFromLink")
-		c.JSON(http.StatusBadRequest, Response{Error: "Неверные параметры запроса: " + err.Error()})
+		
+		// Создаем ответ об ошибке валидации в формате v2
+		response := V2Response{
+			Version: "v2",
+			Content: V2Content{
+				Type:     "instagram",
+				Messages: []string{},
+				Actions: []V2Action{
+					{
+						Action:    "set_field_value",
+						FieldName: "error_message",
+						Value:     "Неверные параметры запроса: " + err.Error(),
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "error_code",
+						Value:     "invalid_request",
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "status",
+						Value:     false,
+					},
+				},
+			},
+		}
+		
+		c.JSON(http.StatusOK, response)
 		return
 	}
 	
@@ -129,22 +180,98 @@ func getFromLink(c *gin.Context) {
 	}).Info("Обработка запроса getFromLink")
 	
 	// Делаем запрос к Travelpayouts API
-	affiliateLink, err := makeAffiliateLink(req.Link, req.Token, req.TRS, req.Marker)
+	affiliateLink, tpError, err := makeAffiliateLink(req.Link, req.Token, req.TRS, req.Marker)
 	if err != nil {
 		logger.WithError(err).Error("Ошибка создания аффилиатной ссылки")
-		c.JSON(http.StatusInternalServerError, Response{Error: err.Error()})
+		
+		// Создаем ответ об ошибке в формате v2
+		response := V2Response{
+			Version: "v2",
+			Content: V2Content{
+				Type:     "instagram",
+				Messages: []string{},
+				Actions: []V2Action{
+					{
+						Action:    "set_field_value",
+						FieldName: "error_message",
+						Value:     tpError.Message,
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "error_code",
+						Value:     tpError.Code,
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "status",
+						Value:     false,
+					},
+				},
+			},
+		}
+		
+		c.JSON(http.StatusOK, response)
 		return
 	}
 	
 	logger.WithField("affiliate_link", affiliateLink).Info("Аффилиатная ссылка создана успешно")
-	c.JSON(http.StatusOK, Response{Link: affiliateLink})
+	
+	// Создаем успешный ответ в формате v2
+	response := V2Response{
+		Version: "v2",
+		Content: V2Content{
+			Type:     "instagram",
+			Messages: []string{},
+			Actions: []V2Action{
+				{
+					Action:    "set_field_value",
+					FieldName: "aff_url",
+					Value:     affiliateLink,
+				},
+				{
+					Action:    "set_field_value",
+					FieldName: "status",
+					Value:     true,
+				},
+			},
+		},
+	}
+	
+	c.JSON(http.StatusOK, response)
 }
 
 func getFromBrand(c *gin.Context) {
 	var req GetFromBrandRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.WithError(err).Error("Ошибка валидации запроса getFromBrand")
-		c.JSON(http.StatusBadRequest, Response{Error: "Неверные параметры запроса: " + err.Error()})
+		
+		// Создаем ответ об ошибке валидации в формате v2
+		response := V2Response{
+			Version: "v2",
+			Content: V2Content{
+				Type:     "instagram",
+				Messages: []string{},
+				Actions: []V2Action{
+					{
+						Action:    "set_field_value",
+						FieldName: "error_message",
+						Value:     "Неверные параметры запроса: " + err.Error(),
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "error_code",
+						Value:     "invalid_request",
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "status",
+						Value:     false,
+					},
+				},
+			},
+		}
+		
+		c.JSON(http.StatusOK, response)
 		return
 	}
 	
@@ -159,7 +286,34 @@ func getFromBrand(c *gin.Context) {
 	var brand Brand
 	if err := db.Where("brand_name = ?", req.BrandName).First(&brand).Error; err != nil {
 		logger.WithError(err).WithField("brand_name", req.BrandName).Error("Бренд не найден в базе данных")
-		c.JSON(http.StatusNotFound, Response{Error: "Бренд не найден: " + req.BrandName})
+		
+		// Создаем ответ об ошибке в формате v2
+		response := V2Response{
+			Version: "v2",
+			Content: V2Content{
+				Type:     "instagram",
+				Messages: []string{},
+				Actions: []V2Action{
+					{
+						Action:    "set_field_value",
+						FieldName: "error_message",
+						Value:     "Бренд не найден: " + req.BrandName,
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "error_code",
+						Value:     "brand_not_found",
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "status",
+						Value:     false,
+					},
+				},
+			},
+		}
+		
+		c.JSON(http.StatusOK, response)
 		return
 	}
 	
@@ -169,13 +323,62 @@ func getFromBrand(c *gin.Context) {
 	}).Info("Бренд найден в базе данных")
 	
 	// Делаем запрос к Travelpayouts API с ссылкой бренда
-	affiliateLink, err := makeAffiliateLink(brand.BrandLink, req.Token, req.TRS, req.Marker)
+	affiliateLink, tpError, err := makeAffiliateLink(brand.BrandLink, req.Token, req.TRS, req.Marker)
 	if err != nil {
 		logger.WithError(err).Error("Ошибка создания аффилиатной ссылки для бренда")
-		c.JSON(http.StatusInternalServerError, Response{Error: err.Error()})
+		
+		// Создаем ответ об ошибке в формате v2
+		response := V2Response{
+			Version: "v2",
+			Content: V2Content{
+				Type:     "instagram",
+				Messages: []string{},
+				Actions: []V2Action{
+					{
+						Action:    "set_field_value",
+						FieldName: "error_message",
+						Value:     tpError.Message,
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "error_code",
+						Value:     tpError.Code,
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "status",
+						Value:     false,
+					},
+				},
+			},
+		}
+		
+		c.JSON(http.StatusOK, response)
 		return
 	}
 	
 	logger.WithField("affiliate_link", affiliateLink).Info("Аффилиатная ссылка для бренда создана успешно")
-	c.JSON(http.StatusOK, Response{Link: affiliateLink})
+	
+	// Создаем успешный ответ в формате v2
+	response := V2Response{
+		Version: "v2",
+		Content: V2Content{
+			Type:     "instagram",
+			Messages: []string{},
+			Actions: []V2Action{
+				{
+					Action:    "set_field_value",
+					FieldName: "aff_url",
+					Value:     affiliateLink,
+				},
+				{
+					Action:    "set_field_value",
+					FieldName: "status",
+					Value:     true,
+				},
+			},
+		},
+	}
+	
+	c.JSON(http.StatusOK, response)
 } 
