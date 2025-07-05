@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -508,24 +509,44 @@ func getFeed(c *gin.Context) {
 	
 	logger.WithField("feed_length", len(feed)).Info("Данные о поездках получены успешно")
 	
+	// Создаем действия для каждого элемента feed
+	var actions []V2Action
+	
+	for i, item := range feed {
+		index := i + 1 // Индекс начинается с 1
+		
+		// Добавляем действия для каждого поля элемента
+		actions = append(actions, 
+			V2Action{
+				Action:    "set_field_value",
+				FieldName: fmt.Sprintf("Ответ TOP-подборок [%d]: Price", index),
+				Value:     item.Price,
+			},
+			V2Action{
+				Action:    "set_field_value", 
+				FieldName: fmt.Sprintf("Ответ TOP-подборок [%d]: URL", index),
+				Value:     item.Link,
+			},
+			V2Action{
+				Action:    "set_field_value",
+				FieldName: fmt.Sprintf("Ответ TOP-подборок [%d]: Картинка", index),
+				Value:     item.Cover,
+			},
+			V2Action{
+				Action:    "set_field_value",
+				FieldName: fmt.Sprintf("Ответ TOP-подборок [%d]: Название", index),
+				Value:     item.Title,
+			},
+		)
+	}
+	
 	// Создаем успешный ответ в формате v2
 	response := V2Response{
 		Version: "v2",
 		Content: V2Content{
 			Type:     "instagram",
 			Messages: []string{},
-			Actions: []V2Action{
-				{
-					Action:    "set_field_value",
-					FieldName: "Ответ API URLs: данные о поездках",
-					Value:     feed,
-				},
-				{
-					Action:    "set_field_value",
-					FieldName: "Ответ API URLs: status",
-					Value:     true,
-				},
-			},
+			Actions:  actions,
 		},
 	}
 	
