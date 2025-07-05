@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"strings"
 )
 
 // TravelPayoutsRequest представляет запрос к Travelpayouts API
@@ -211,4 +212,202 @@ func buildAffiliateLink(originalLink, token, trs, marker string) (string, error)
 	// Простое добавление параметров к URL (для тестирования)
 	return fmt.Sprintf("%s?sub_id=social_tool_main&token=%s&trs=%s&marker=%s", 
 		originalLink, token, trs, marker), nil
+}
+
+// getTravelpayoutsFeed получает фид поездок для указанного города
+func getTravelpayoutsFeed(city, lang, currency string, page int, token, trs, marker string) ([]FeedItem, *TPError, error) {
+	// Устанавливаем значения по умолчанию
+	if lang == "" {
+		lang = "RU"
+	}
+	if currency == "" {
+		currency = "RUB"
+	}
+	if page <= 0 {
+		page = 1
+	}
+	
+	logger.WithFields(map[string]interface{}{
+		"city":     city,
+		"lang":     lang,
+		"currency": currency,
+		"page":     page,
+		"token":    token,
+		"trs":      trs,
+		"marker":   marker,
+	}).Info("Поиск города в картах WeGoTrip")
+	
+	// Поиск города в картах (сначала COM, потом RU)
+	cityID := 0
+	domain := ""
+	
+	// Проверяем международную карту
+	if cityID = GetCOMWeGoTripCityID(city); cityID != 0 {
+		domain = "com"
+		logger.WithFields(map[string]interface{}{
+			"city":     city,
+			"city_id":  cityID,
+			"domain":   domain,
+		}).Info("Город найден в международной карте")
+	} else if cityID = GetRUWeGoTripCityID(city); cityID != 0 {
+		domain = "ru"
+		logger.WithFields(map[string]interface{}{
+			"city":     city,
+			"city_id":  cityID,
+			"domain":   domain,
+		}).Info("Город найден в русской карте")
+	}
+	
+	// Если город не найден
+	if cityID == 0 {
+		logger.WithField("city", city).Error("Город не найден ни в одной из карт")
+		return nil, &TPError{Code: "city_not_found", Message: "нет такого города"}, fmt.Errorf("город не найден: %s", city)
+	}
+	
+	// Формируем URL для запроса к WeGoTrip API
+	var baseURL string
+	if domain == "ru" {
+		baseURL = "https://wegotrip.ru"
+	} else {
+		baseURL = "https://app.wegotrip.com"
+	}
+	
+	requestURL := fmt.Sprintf("%s/api/v2/products/popular/?city=%d&lang=%s&currency=%s", 
+		baseURL, cityID, strings.ToLower(lang), currency)
+	
+	logger.WithFields(map[string]interface{}{
+		"request_url": requestURL,
+		"city_id":     cityID,
+		"domain":      domain,
+	}).Info("Отправка запроса к WeGoTrip API")
+	
+	// Делаем HTTP запрос
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	
+	resp, err := client.Get(requestURL)
+	if err != nil {
+		logger.WithError(err).Error("Ошибка выполнения HTTP запроса к WeGoTrip")
+		return nil, &TPError{Code: "network_error", Message: "ошибка запроса к WeGoTrip API"}, fmt.Errorf("ошибка запроса к WeGoTrip: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	logger.WithFields(map[string]interface{}{
+		"status_code": resp.StatusCode,
+		"status":      resp.Status,
+	}).Info("Получен ответ от WeGoTrip API")
+	
+	// Читаем ответ
+	var responseBody bytes.Buffer
+	_, err = responseBody.ReadFrom(resp.Body)
+	if err != nil {
+		logger.WithError(err).Error("Ошибка чтения ответа WeGoTrip")
+		return nil, &TPError{Code: "response_error", Message: "ошибка чтения ответа"}, fmt.Errorf("ошибка чтения ответа: %v", err)
+	}
+	
+	responseString := responseBody.String()
+	logger.WithField("response_body", responseString).Info("Тело ответа от WeGoTrip API")
+	
+	// Проверяем статус ответа
+	if resp.StatusCode != http.StatusOK {
+		logger.WithField("status_code", resp.StatusCode).Error("WeGoTrip API вернул ошибку")
+		return nil, &TPError{Code: "api_error", Message: fmt.Sprintf("API вернул ошибку %d", resp.StatusCode)}, fmt.Errorf("API вернул ошибку %d", resp.StatusCode)
+	}
+	
+	// Парсим ответ
+	var apiResponse WeGoTripResponse
+	if err := json.Unmarshal(responseBody.Bytes(), &apiResponse); err != nil {
+		logger.WithError(err).Error("Ошибка парсинга ответа WeGoTrip API")
+		return nil, &TPError{Code: "parse_error", Message: "ошибка парсинга ответа"}, fmt.Errorf("ошибка парсинга ответа: %v", err)
+	}
+	
+	// Применяем пагинацию (3 элемента на страницу)
+	results := apiResponse.Data.Results
+	totalItems := len(results)
+	
+	// Вычисляем индексы для пагинации
+	startIndex := (page - 1) * 3
+	endIndex := startIndex + 3
+	
+	if startIndex >= totalItems {
+		logger.WithFields(map[string]interface{}{
+			"page":        page,
+			"total_items": totalItems,
+			"start_index": startIndex,
+		}).Info("Запрошенная страница превышает количество доступных данных")
+		return []FeedItem{}, nil, nil
+	}
+	
+	if endIndex > totalItems {
+		endIndex = totalItems
+	}
+	
+	paginatedResults := results[startIndex:endIndex]
+	
+	logger.WithFields(map[string]interface{}{
+		"total_items":      totalItems,
+		"page":            page,
+		"start_index":     startIndex,
+		"end_index":       endIndex,
+		"paginated_count": len(paginatedResults),
+	}).Info("Применена пагинация")
+	
+	// Преобразуем в FeedItem с генерацией ссылок
+	var feedItems []FeedItem
+	for _, product := range paginatedResults {
+		// Генерируем ссылку в формате: https://wegotrip.{domain}/${city-slug}-d${city-id}/${product-slug}-p${product-id}
+		var linkDomain string
+		if domain == "ru" {
+			linkDomain = "wegotrip.ru"
+		} else {
+			linkDomain = "app.wegotrip.com"
+		}
+		
+		originalLink := fmt.Sprintf("https://%s/%s-d%d/%s-p%d", 
+			linkDomain, product.City.Slug, cityID, product.Slug, product.ID)
+		
+		logger.WithFields(map[string]interface{}{
+			"product_id":      product.ID,
+			"product_title":   product.Title,
+			"original_link":   originalLink,
+		}).Info("Создание партнерской ссылки для продукта")
+		
+		// Создаем партнерскую ссылку через Travelpayouts API
+		affiliateLink, tpError, err := makeAffiliateLink(originalLink, token, trs, marker)
+		if err != nil {
+			logger.WithError(err).WithFields(map[string]interface{}{
+				"product_id":     product.ID,
+				"original_link":  originalLink,
+				"error_code":     tpError.Code,
+				"error_message":  tpError.Message,
+			}).Error("Ошибка создания партнерской ссылки для продукта")
+			
+			// Возвращаем ошибку, если не удалось создать партнерскую ссылку
+			return nil, tpError, err
+		}
+		
+		feedItem := FeedItem{
+			ID:       product.ID,
+			Title:    product.Title,
+			Slug:     product.Slug,
+			CitySlug: product.City.Slug,
+			Price:    product.Price,
+			Cover:    product.Cover,
+			Link:     affiliateLink, // Используем партнерскую ссылку вместо оригинальной
+		}
+		
+		feedItems = append(feedItems, feedItem)
+		
+		logger.WithFields(map[string]interface{}{
+			"product_id":      product.ID,
+			"product_title":   product.Title,
+			"original_link":   originalLink,
+			"affiliate_link":  affiliateLink,
+		}).Info("Партнерская ссылка создана успешно")
+	}
+	
+	logger.WithField("feed_items_count", len(feedItems)).Info("Успешно создан фид поездок с партнерскими ссылками")
+	
+	return feedItems, nil, nil
 } 

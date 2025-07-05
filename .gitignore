@@ -1,0 +1,54 @@
+# City parsers and generators (temporary tools)
+city_parser/
+city_parcer/
+*_parser.go
+*_universal_parser.go
+generate_*.go
+fix_*.go
+
+# Test files
+test_*.go
+*_test.go
+
+# Generated JSON data (can be regenerated)
+*.json
+
+# Logs
+*.log
+
+# Build artifacts
+/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go specific
+*.test
+*.prof
+*.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Environment files
+.env
+.env.local
+.env.production 

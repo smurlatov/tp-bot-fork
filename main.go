@@ -59,6 +59,54 @@ type Response struct {
 	Error string `json:"error,omitempty"`
 }
 
+// Структуры для getFeed
+type GetFeedRequest struct {
+	City     string `json:"city" binding:"required"`
+	Lang     string `json:"lang"`
+	Currency string `json:"currency"`
+	Page     int    `json:"page"`
+	Token    string `json:"token" binding:"required"`
+	TRS      string `json:"trs" binding:"required"`
+	Marker   string `json:"marker" binding:"required"`
+}
+
+type WeGoTripProduct struct {
+	ID       int    `json:"id"`
+	Title    string `json:"title"`
+	Slug     string `json:"slug"`
+	Cover    string `json:"cover"`
+	Price    float64 `json:"price"`
+	City     WeGoTripCity `json:"city"`
+}
+
+type WeGoTripCity struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+type WeGoTripResponse struct {
+	Data WeGoTripData `json:"data"`
+}
+
+type WeGoTripData struct {
+	Count    int               `json:"count"`
+	Pages    int               `json:"pages"`
+	Current  int               `json:"current"`
+	Results  []WeGoTripProduct `json:"results"`
+	MaxPrice float64           `json:"maxPrice"`
+}
+
+type FeedItem struct {
+	ID       int     `json:"id"`
+	Title    string  `json:"title"`
+	Slug     string  `json:"slug"`
+	CitySlug string  `json:"city_slug"`
+	Price    float64 `json:"price"`
+	Cover    string  `json:"cover"`
+	Link     string  `json:"link"`
+}
+
 var db *gorm.DB
 var logger *logrus.Logger
 
@@ -102,6 +150,7 @@ func main() {
 	{
 		api.POST("/getFromLink", getFromLink)
 		api.POST("/getFromBrand", getFromBrand)
+		api.POST("/getFeed", getFeed)
 	}
 	
 	// Health check
@@ -151,17 +200,17 @@ func getFromLink(c *gin.Context) {
 				Actions: []V2Action{
 					{
 						Action:    "set_field_value",
-						FieldName: "error_message",
+						FieldName: "Ответ API URLS: error_message",
 						Value:     "Неверные параметры запроса: " + err.Error(),
 					},
 					{
 						Action:    "set_field_value",
-						FieldName: "error_code",
+						FieldName: "Ответ API URLs: error_code",
 						Value:     "invalid_request",
 					},
 					{
 						Action:    "set_field_value",
-						FieldName: "status",
+						FieldName: "Ответ API URLs: status",
 						Value:     false,
 					},
 				},
@@ -193,17 +242,17 @@ func getFromLink(c *gin.Context) {
 				Actions: []V2Action{
 					{
 						Action:    "set_field_value",
-						FieldName: "error_message",
+						FieldName: "Ответ API URLS: error_message",
 						Value:     tpError.Message,
 					},
 					{
 						Action:    "set_field_value",
-						FieldName: "error_code",
+						FieldName: "Ответ API URLs: error_code",
 						Value:     tpError.Code,
 					},
 					{
 						Action:    "set_field_value",
-						FieldName: "status",
+						FieldName: "Ответ API URLs: status",
 						Value:     false,
 					},
 				},
@@ -225,12 +274,12 @@ func getFromLink(c *gin.Context) {
 			Actions: []V2Action{
 				{
 					Action:    "set_field_value",
-					FieldName: "aff_url",
+					FieldName: "Ответ API URLs: афф.ссылка",
 					Value:     affiliateLink,
 				},
 				{
 					Action:    "set_field_value",
-					FieldName: "status",
+					FieldName: "Ответ API URLs: status",
 					Value:     true,
 				},
 			},
@@ -254,17 +303,17 @@ func getFromBrand(c *gin.Context) {
 				Actions: []V2Action{
 					{
 						Action:    "set_field_value",
-						FieldName: "error_message",
+						FieldName: "Ответ API URLS: error_message",
 						Value:     "Неверные параметры запроса: " + err.Error(),
 					},
 					{
 						Action:    "set_field_value",
-						FieldName: "error_code",
+						FieldName: "Ответ API URLs: error_code",
 						Value:     "invalid_request",
 					},
 					{
 						Action:    "set_field_value",
-						FieldName: "status",
+						FieldName: "Ответ API URLs: status",
 						Value:     false,
 					},
 				},
@@ -296,17 +345,17 @@ func getFromBrand(c *gin.Context) {
 				Actions: []V2Action{
 					{
 						Action:    "set_field_value",
-						FieldName: "error_message",
+						FieldName: "Ответ API URLS: error_message",
 						Value:     "Бренд не найден: " + req.BrandName,
 					},
 					{
 						Action:    "set_field_value",
-						FieldName: "error_code",
+						FieldName: "Ответ API URLs: error_code",
 						Value:     "brand_not_found",
 					},
 					{
 						Action:    "set_field_value",
-						FieldName: "status",
+						FieldName: "Ответ API URLs: status",
 						Value:     false,
 					},
 				},
@@ -336,17 +385,17 @@ func getFromBrand(c *gin.Context) {
 				Actions: []V2Action{
 					{
 						Action:    "set_field_value",
-						FieldName: "error_message",
+						FieldName: "Ответ API URLS: error_message",
 						Value:     tpError.Message,
 					},
 					{
 						Action:    "set_field_value",
-						FieldName: "error_code",
+						FieldName: "Ответ API URLs: error_code",
 						Value:     tpError.Code,
 					},
 					{
 						Action:    "set_field_value",
-						FieldName: "status",
+						FieldName: "Ответ API URLs: status",
 						Value:     false,
 					},
 				},
@@ -368,12 +417,118 @@ func getFromBrand(c *gin.Context) {
 			Actions: []V2Action{
 				{
 					Action:    "set_field_value",
-					FieldName: "aff_url",
+					FieldName: "Ответ API URLs: афф.ссылка",
 					Value:     affiliateLink,
 				},
 				{
 					Action:    "set_field_value",
-					FieldName: "status",
+					FieldName: "Ответ API URLs: status",
+					Value:     true,
+				},
+			},
+		},
+	}
+	
+	c.JSON(http.StatusOK, response)
+}
+
+func getFeed(c *gin.Context) {
+	var req GetFeedRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.WithError(err).Error("Ошибка валидации запроса getFeed")
+		
+		// Создаем ответ об ошибке валидации в формате v2
+		response := V2Response{
+			Version: "v2",
+			Content: V2Content{
+				Type:     "instagram",
+				Messages: []string{},
+				Actions: []V2Action{
+					{
+						Action:    "set_field_value",
+						FieldName: "Ответ API URLS: error_message",
+						Value:     "Неверные параметры запроса: " + err.Error(),
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "Ответ API URLs: error_code",
+						Value:     "invalid_request",
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "Ответ API URLs: status",
+						Value:     false,
+					},
+				},
+			},
+		}
+		
+		c.JSON(http.StatusOK, response)
+		return
+	}
+	
+	logger.WithFields(logrus.Fields{
+		"city":     req.City,
+		"lang":     req.Lang,
+		"currency": req.Currency,
+		"page":     req.Page,
+		"token":    req.Token,
+		"trs":      req.TRS,
+		"marker":   req.Marker,
+	}).Info("Обработка запроса getFeed")
+	
+	// Делаем запрос к Travelpayouts API
+	feed, tpError, err := getTravelpayoutsFeed(req.City, req.Lang, req.Currency, req.Page, req.Token, req.TRS, req.Marker)
+	if err != nil {
+		logger.WithError(err).Error("Ошибка получения данных о поездках")
+		
+		// Создаем ответ об ошибке в формате v2
+		response := V2Response{
+			Version: "v2",
+			Content: V2Content{
+				Type:     "instagram",
+				Messages: []string{},
+				Actions: []V2Action{
+					{
+						Action:    "set_field_value",
+						FieldName: "Ответ API URLS: error_message",
+						Value:     tpError.Message,
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "Ответ API URLs: error_code",
+						Value:     tpError.Code,
+					},
+					{
+						Action:    "set_field_value",
+						FieldName: "Ответ API URLs: status",
+						Value:     false,
+					},
+				},
+			},
+		}
+		
+		c.JSON(http.StatusOK, response)
+		return
+	}
+	
+	logger.WithField("feed_length", len(feed)).Info("Данные о поездках получены успешно")
+	
+	// Создаем успешный ответ в формате v2
+	response := V2Response{
+		Version: "v2",
+		Content: V2Content{
+			Type:     "instagram",
+			Messages: []string{},
+			Actions: []V2Action{
+				{
+					Action:    "set_field_value",
+					FieldName: "Ответ API URLs: данные о поездках",
+					Value:     feed,
+				},
+				{
+					Action:    "set_field_value",
+					FieldName: "Ответ API URLs: status",
 					Value:     true,
 				},
 			},
