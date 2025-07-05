@@ -65,9 +65,6 @@ type GetFeedRequest struct {
 	Lang     string `json:"lang"`
 	Currency string `json:"currency"`
 	Page     int    `json:"page"`
-	Token    string `json:"token" binding:"required"`
-	TRS      string `json:"trs" binding:"required"`
-	Marker   string `json:"marker" binding:"required"`
 }
 
 type WeGoTripProduct struct {
@@ -472,13 +469,10 @@ func getFeed(c *gin.Context) {
 		"lang":     req.Lang,
 		"currency": req.Currency,
 		"page":     req.Page,
-		"token":    req.Token,
-		"trs":      req.TRS,
-		"marker":   req.Marker,
 	}).Info("Обработка запроса getFeed")
 	
 	// Делаем запрос к Travelpayouts API
-	feed, tpError, err := getTravelpayoutsFeed(req.City, req.Lang, req.Currency, req.Page, req.Token, req.TRS, req.Marker)
+	feed, tpError, err := getTravelpayoutsFeed(req.City, req.Lang, req.Currency, req.Page)
 	if err != nil {
 		logger.WithError(err).Error("Ошибка получения данных о поездках")
 		

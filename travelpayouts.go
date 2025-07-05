@@ -215,7 +215,7 @@ func buildAffiliateLink(originalLink, token, trs, marker string) (string, error)
 }
 
 // getTravelpayoutsFeed получает фид поездок для указанного города
-func getTravelpayoutsFeed(city, lang, currency string, page int, token, trs, marker string) ([]FeedItem, *TPError, error) {
+func getTravelpayoutsFeed(city, lang, currency string, page int) ([]FeedItem, *TPError, error) {
 	// Устанавливаем значения по умолчанию
 	if lang == "" {
 		lang = "RU"
@@ -232,9 +232,6 @@ func getTravelpayoutsFeed(city, lang, currency string, page int, token, trs, mar
 		"lang":     lang,
 		"currency": currency,
 		"page":     page,
-		"token":    token,
-		"trs":      trs,
-		"marker":   marker,
 	}).Info("Поиск города в картах WeGoTrip")
 	
 	// Поиск города в картах (сначала COM, потом RU)
@@ -364,28 +361,8 @@ func getTravelpayoutsFeed(city, lang, currency string, page int, token, trs, mar
 			linkDomain = "app.wegotrip.com"
 		}
 		
-		originalLink := fmt.Sprintf("https://%s/%s-d%d/%s-p%d", 
+		link := fmt.Sprintf("https://%s/%s-d%d/%s-p%d", 
 			linkDomain, product.City.Slug, cityID, product.Slug, product.ID)
-		
-		logger.WithFields(map[string]interface{}{
-			"product_id":      product.ID,
-			"product_title":   product.Title,
-			"original_link":   originalLink,
-		}).Info("Создание партнерской ссылки для продукта")
-		
-		// Создаем партнерскую ссылку через Travelpayouts API
-		affiliateLink, tpError, err := makeAffiliateLink(originalLink, token, trs, marker)
-		if err != nil {
-			logger.WithError(err).WithFields(map[string]interface{}{
-				"product_id":     product.ID,
-				"original_link":  originalLink,
-				"error_code":     tpError.Code,
-				"error_message":  tpError.Message,
-			}).Error("Ошибка создания партнерской ссылки для продукта")
-			
-			// Возвращаем ошибку, если не удалось создать партнерскую ссылку
-			return nil, tpError, err
-		}
 		
 		feedItem := FeedItem{
 			ID:       product.ID,
@@ -394,7 +371,7 @@ func getTravelpayoutsFeed(city, lang, currency string, page int, token, trs, mar
 			CitySlug: product.City.Slug,
 			Price:    product.Price,
 			Cover:    product.Cover,
-			Link:     affiliateLink, // Используем партнерскую ссылку вместо оригинальной
+			Link:     link,
 		}
 		
 		feedItems = append(feedItems, feedItem)
@@ -402,12 +379,11 @@ func getTravelpayoutsFeed(city, lang, currency string, page int, token, trs, mar
 		logger.WithFields(map[string]interface{}{
 			"product_id":      product.ID,
 			"product_title":   product.Title,
-			"original_link":   originalLink,
-			"affiliate_link":  affiliateLink,
-		}).Info("Партнерская ссылка создана успешно")
+			"generated_link":  link,
+		}).Info("Сгенерирована ссылка для продукта")
 	}
 	
-	logger.WithField("feed_items_count", len(feedItems)).Info("Успешно создан фид поездок с партнерскими ссылками")
+	logger.WithField("feed_items_count", len(feedItems)).Info("Успешно создан фид поездок")
 	
 	return feedItems, nil, nil
 } 
