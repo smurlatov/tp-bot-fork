@@ -539,6 +539,14 @@ func getFeed(c *gin.Context) {
 			},
 		)
 	}
+
+	actions = append(actions, 
+		V2Action{
+			Action:    "set_field_value",
+			FieldName: "Ответ API URLs: status",
+			Value:     true,
+		},
+	)
 	
 	// Создаем успешный ответ в формате v2
 	response := V2Response{

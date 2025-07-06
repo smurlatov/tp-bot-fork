@@ -55,6 +55,15 @@ type TravelPayoutsErrorResponse struct {
 	Message string `json:"message"`
 }
 
+// Структуры для обработки ошибок WeGoTrip API
+type WeGoTripError struct {
+	Message string `json:"message"`
+}
+
+type WeGoTripErrorResponse struct {
+	Errors []WeGoTripError `json:"errors"`
+}
+
 // makeAffiliateLink создает аффилиатную ссылку через Travelpayouts API
 func makeAffiliateLink(originalLink, token, trs, marker string) (string, *TPError, error) {
 	logger.WithFields(map[string]interface{}{
@@ -303,8 +312,23 @@ func getTravelpayoutsFeed(city, lang, currency string, page int) ([]FeedItem, *T
 		return nil, &TPError{Code: "response_error", Message: "ошибка чтения ответа"}, fmt.Errorf("ошибка чтения ответа: %v", err)
 	}
 	
-	responseString := responseBody.String()
+	responseBytes := responseBody.Bytes()
+	responseString := string(responseBytes)
 	logger.WithField("response_body", responseString).Info("Тело ответа от WeGoTrip API")
+	
+	// Сначала проверяем, не является ли ответ ошибкой (независимо от статус кода)
+	var errorResponse WeGoTripErrorResponse
+	if err := json.Unmarshal(responseBytes, &errorResponse); err == nil && len(errorResponse.Errors) > 0 {
+		// API вернул ошибку
+		errorMessage := errorResponse.Errors[0].Message
+		logger.WithFields(map[string]interface{}{
+			"status_code":    resp.StatusCode,
+			"error_message":  errorMessage,
+			"errors_count":   len(errorResponse.Errors),
+		}).Error("WeGoTrip API вернул ошибку")
+		
+		return nil, &TPError{Code: "wegotrip_api_error", Message: errorMessage}, fmt.Errorf("ошибка WeGoTrip API: %s", errorMessage)
+	}
 	
 	// Проверяем статус ответа
 	if resp.StatusCode != http.StatusOK {
@@ -312,9 +336,9 @@ func getTravelpayoutsFeed(city, lang, currency string, page int) ([]FeedItem, *T
 		return nil, &TPError{Code: "api_error", Message: fmt.Sprintf("API вернул ошибку %d", resp.StatusCode)}, fmt.Errorf("API вернул ошибку %d", resp.StatusCode)
 	}
 	
-	// Парсим ответ
+	// Парсим обычный ответ
 	var apiResponse WeGoTripResponse
-	if err := json.Unmarshal(responseBody.Bytes(), &apiResponse); err != nil {
+	if err := json.Unmarshal(responseBytes, &apiResponse); err != nil {
 		logger.WithError(err).Error("Ошибка парсинга ответа WeGoTrip API")
 		return nil, &TPError{Code: "parse_error", Message: "ошибка парсинга ответа"}, fmt.Errorf("ошибка парсинга ответа: %v", err)
 	}
