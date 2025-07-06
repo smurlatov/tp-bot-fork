@@ -39,8 +39,6 @@ RUN mkdir -p /root/data
 # Открываем порт
 EXPOSE 8080
 
-# Устанавливаем переменную окружения для базы данных
-ENV DATABASE_PATH=/root/data/brands.db
 
 # Запускаем приложение
 CMD ["./main"] 
