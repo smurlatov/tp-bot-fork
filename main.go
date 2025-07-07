@@ -17,13 +17,7 @@ type GetFromLinkRequest struct {
 	Token  string `json:"token" binding:"required"`
 	TRS    string `json:"trs" binding:"required"`
 	Marker string `json:"marker" binding:"required"`
-}
-
-type GetFromBrandRequest struct {
-	BrandName string `json:"brand_name" binding:"required"`
-	Token     string `json:"token" binding:"required"`
-	TRS       string `json:"trs" binding:"required"`
-	Marker    string `json:"marker" binding:"required"`
+	Type   string `json:"type" binding:"required"`
 }
 
 type GetFeedRequest struct {
@@ -31,6 +25,7 @@ type GetFeedRequest struct {
 	Lang     string `json:"lang"`
 	Currency string `json:"currency"`
 	Page     int    `json:"page"`
+	Type     string `json:"type" binding:"required"`
 }
 
 var logger *logrus.Logger
@@ -93,13 +88,14 @@ func getFromLink(c *gin.Context) {
 		"token":  req.Token,
 		"trs":    req.TRS,
 		"marker": req.Marker,
+		"type":   req.Type,
 	}).Info("Обработка запроса getFromLink")
 
+	mc := ManyChat.NewWithParams(req.Type)
 	tp, err := TravelPayouts.New(req.Token, req.TRS, req.Marker)
 	if err != nil {
 		logger.WithError(err).Error("Ошибка создания TravelPayouts клиента")
 
-		mc := ManyChat.New()
 		response := mc.FromError(err)
 
 		c.JSON(http.StatusOK, response)
@@ -110,7 +106,6 @@ func getFromLink(c *gin.Context) {
 	if err != nil {
 		logger.WithError(err).Error("Ошибка создания аффилиатной ссылки")
 
-		mc := ManyChat.New()
 		response := mc.FromError(err)
 
 		c.JSON(http.StatusOK, response)
@@ -119,7 +114,6 @@ func getFromLink(c *gin.Context) {
 
 	logger.WithField("affiliate_link", affiliateLink).Info("Аффилиатная ссылка создана успешно")
 
-	mc := ManyChat.New()
 	response := mc.FromTravelPayoutsResponse(affiliateLink)
 
 	c.JSON(http.StatusOK, response)
@@ -145,12 +139,12 @@ func getFeed(c *gin.Context) {
 	}).Info("Обработка запроса getFeed")
 
 	wg := WeGoTrip.New()
+	mc := ManyChat.NewWithParams(req.Type)
 
 	feed, err := wg.GetFeed(req.City, req.Lang, req.Currency, req.Page)
 	if err != nil {
 		logger.WithError(err).Error("Ошибка получения данных о поездках")
 
-		mc := ManyChat.New()
 		response := mc.FromError(err)
 
 		c.JSON(http.StatusOK, response)
@@ -159,7 +153,6 @@ func getFeed(c *gin.Context) {
 
 	logger.WithField("feed_length", len(feed)).Info("Данные о поездках получены успешно")
 
-	mc := ManyChat.New()
 	response := mc.FromWeGoGetRespose(feed)
 
 	c.JSON(http.StatusOK, response)

@@ -52,12 +52,12 @@ func New() *ManyChat {
 	}
 }
 
-// func NewWithParams(version, content string) *ManyChat {
-// 	return &ManyChat{
-// 		version: version,
-// 		content: content,
-// 	}
-// }
+func NewWithParams(content string) *ManyChat {
+	return &ManyChat{
+		version: "v2",
+		content: content,
+	}
+}
 
 func (mc *ManyChat) FromTravelPayoutsResponse(link string) Response {
 	return Response{
